@@ -11,7 +11,7 @@ from tqdm import tqdm
 from util import *
 from config import *
 # %%
-mask_folder_name = 'mask07'
+# mask_folder_name = 'mask05'
 if not os.path.exists('dataset_processed/'+DATASET+'/'+mask_folder_name+'/graph_data/v2/adj_temporal_new'):
     os.makedirs('dataset_processed/'+DATASET+'/'+mask_folder_name+'/graph_data/v2/adj_temporal_new')
 # %%

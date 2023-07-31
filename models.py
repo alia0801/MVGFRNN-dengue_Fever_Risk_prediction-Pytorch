@@ -46,6 +46,7 @@ if DATASET=='aqi':
                 'Vehicle Service','Sport','Daily Life','Institution','primary','secondary','pedestrian','highway','water','industrial','green','residential']
 
 st_col_all = st_col.copy()
+# if DATASET =='dengue':
 dirs = ['B', 'T', 'L', 'R', 'RB', 'RT', 'LB', 'LT']
 for grid_dir in dirs:
     col_name = pd.Series(st_col.copy()) + '_'+grid_dir
@@ -188,6 +189,14 @@ def read_fusion_graph(t,path='dataset_processed/'+DATASET+'/graph_data/'):
     sp_dist_adj = np.load(path+'adj_spatial_dist/'+str(t)+'.npy')
     sp_cluster_adj = np.load(path+'adj_spatial_cluster/'+str(t)+'.npy')
     tmep_adj = np.load(path+'adj_temporal_new/'+str(t)+'.npy')
+    # if VIEW_NUM==1:
+    #     if graph_type=='sp_dist':
+    #         adj=[torch.tensor(sp_dist_adj, device=DEVICE).double()]
+    #     elif graph_type=='sp_clus':
+    #         adj=[torch.tensor(sp_cluster_adj, device=DEVICE).double()]
+    #     elif graph_type=='temp':
+    #         adj=[torch.tensor(tmep_adj, device=DEVICE).double()]
+    # el
     if VIEW_NUM==2:
         adj=[torch.tensor(sp_dist_adj, device=DEVICE).double(), torch.tensor(tmep_adj, device=DEVICE).double()]
     elif VIEW_NUM==3:
@@ -204,6 +213,17 @@ def read_fusion_graph(t,path='dataset_processed/'+DATASET+'/graph_data/'):
     return adj, torch.Tensor(feat).to(DEVICE), nid
     # return adj, torch.tensor(feat, device=device).double(), nid
 
+def read_fusion_graph_1view(t,path='dataset_processed/'+DATASET+'/graph_data/',type_num=3):
+    feat = np.load(path+'feat/'+str(t)+'.npy')
+    if graph_type=='sp_dist':
+        adj = np.load(path+'adj_spatial_dist/'+str(t)+'.npy')
+    elif graph_type=='sp_clus':
+        adj = np.load(path+'adj_spatial_cluster/'+str(t)+'.npy')
+    elif graph_type=='temp':
+        adj = np.load(path+'adj_temporal_new/'+str(t)+'.npy')
+    adj_fuse=torch.tensor(adj, device=DEVICE).double()
+    nid = np.load(path+'all_node_id.npy')
+    return torch.tensor(adj_fuse, device=DEVICE).double(), torch.Tensor(feat).to(DEVICE), nid
 
 # In[23]:
 
@@ -528,21 +548,40 @@ class MVGFRNN(nn.Module) :
             if add_labeled_embed: 
                 label_time = torch.cat((ovi_label.unsqueeze(3), meo_label), 3) #torch.Size([128, 10, 4, 1]) + torch.Size([128, 10, 4, 11]) -> torch.Size([128, 10, 4, 12])
                 label_time_data = []
+                label_feature = []
+                label_data = [] 
                 for i in range(self.num_station) :
                     lstm_tmp, _ = self.label_lstm_1(label_time[:,i,:,:].permute(1,0,2)) #torch.Size([128, 4, 12]) -> torch.Size([4, 128, 12]) -> torch.Size([4, 128, 32])
                     lstm_tmp = lstm_tmp.float()[-1] #torch.Size([4, 128, 32]) -> torch.Size([128, 32])
                     label_time_data.append(lstm_tmp)
-    #             print('lstm_tmp',lstm_tmp.shape)
+
+                    label_feature.append(nn.ReLU()(self.label_linear_1(feature_label[:,i,:])))
+                    #torch.Size([128, 10, 136]) -> torch.Size([128, 136]) -> torch.Size([128, 32])
+
+                    label_data.append(nn.ReLU()(self.label_linear_2(torch.cat([label_time_data[i], label_feature[i],label_data_stfgn_batch[i]], 1))))
+                    # torch.Size([128, 32])+torch.Size([128, 32]) -> torch.Size([128, 64]) -> torch.Size([128, 64])
+
+                # print('lstm_tmp',lstm_tmp.shape)
                 # if torch.isnan(lstm_tmp).any():
                 #     print('lstm_tmp',lstm_tmp)
+                # print('label_feature[0]',label_feature[0].shape)
                 
-                label_feature = []
-                for i in range(self.num_station) : #torch.Size([128, 10, 136]) -> torch.Size([128, 136]) -> torch.Size([128, 32])
-                    label_feature.append(nn.ReLU()(self.label_linear_1(feature_label[:,i,:])))
-    #             print('label_feature[0]',label_feature[0].shape)
-                label_data = []    
-                for i in range(self.num_station) : # torch.Size([128, 32])+torch.Size([128, 32]) -> torch.Size([128, 64]) -> torch.Size([128, 64])
-                    label_data.append(nn.ReLU()(self.label_linear_2(torch.cat([label_time_data[i], label_feature[i],label_data_stfgn_batch[i]], 1))))
+                
+    #             label_feature = []
+    #             for i in range(self.num_station) : #torch.Size([128, 10, 136]) -> torch.Size([128, 136]) -> torch.Size([128, 32])
+    #                 label_feature.append(nn.ReLU()(self.label_linear_1(feature_label[:,i,:])))
+    # #             print('label_feature[0]',label_feature[0].shape)
+    #             label_data = []    
+    #             for i in range(self.num_station) : # torch.Size([128, 32])+torch.Size([128, 32]) -> torch.Size([128, 64]) -> torch.Size([128, 64])
+    #                 label_data.append(nn.ReLU()(self.label_linear_2(torch.cat([label_time_data[i], label_feature[i],label_data_stfgn_batch[i]], 1))))
+                    
+    #             label_feature = []
+    #             for i in range(self.num_station) : #torch.Size([128, 10, 136]) -> torch.Size([128, 136]) -> torch.Size([128, 32])
+    #                 label_feature.append(nn.ReLU()(self.label_linear_1(feature_label[:,i,:])))
+    # #             print('label_feature[0]',label_feature[0].shape)
+    #             label_data = []    
+    #             for i in range(self.num_station) : # torch.Size([128, 32])+torch.Size([128, 32]) -> torch.Size([128, 64]) -> torch.Size([128, 64])
+    #                 label_data.append(nn.ReLU()(self.label_linear_2(torch.cat([label_time_data[i], label_feature[i],label_data_stfgn_batch[i]], 1))))
             
             else:
                 label_data = []    
@@ -1202,16 +1241,18 @@ class ZTYao(nn.Module) :
         
         label_time = torch.cat((ovi_label.unsqueeze(3), meo_label), 3) #torch.Size([128, 10, 4, 1]) + torch.Size([128, 10, 4, 11]) -> torch.Size([128, 10, 4, 12])
         label_time_data = []
+        label_feature = []
+        label_data = [] 
         for i in range(self.num_station) :
             lstm_tmp, _ = self.label_lstm_1(label_time[:,i,:,:].permute(1,0,2)) #torch.Size([128, 4, 12]) -> torch.Size([4, 128, 12]) -> torch.Size([4, 128, 32])
             lstm_tmp = lstm_tmp.float()[-1] #torch.Size([4, 128, 32]) -> torch.Size([128, 32])
             label_time_data.append(lstm_tmp)
-        label_feature = []
-        for i in range(self.num_station) : #torch.Size([128, 10, 136]) -> torch.Size([128, 136]) -> torch.Size([128, 32])
-            label_feature.append(nn.ReLU()(self.label_linear_1(feature_label[:,i,:])))
-        label_data = []    
-        for i in range(self.num_station) : # torch.Size([128, 32])+torch.Size([128, 32]) -> torch.Size([128, 64]) -> torch.Size([128, 64])
+
+            label_feature.append(nn.ReLU()(self.label_linear_1(feature_label[:,i,:]))) 
+            #torch.Size([128, 10, 136]) -> torch.Size([128, 136]) -> torch.Size([128, 32])
+
             label_data.append(nn.ReLU()(self.label_linear_2(torch.cat((label_time_data[i], label_feature[i]), 1))))
+            # torch.Size([128, 32])+torch.Size([128, 32]) -> torch.Size([128, 64]) -> torch.Size([128, 64])
         
         attention_score = self.attention(unlabel_data, label_data, dis_label) # torch.Size([10])
 #         print('attention_score',attention_score.shape) #torch.Size([128, 10])
@@ -1240,4 +1281,120 @@ class ZTYao(nn.Module) :
 
 
 
+class OneView(nn.Module) :
+    def __init__(self, num_station=10, output_size=1) :
+        super(OneView, self).__init__()
+        self.num_station = num_station
+        self.prev_slot = PREV_SLOT
+        self.hidden_lstm = 32
+        self.hidden_linear = 32
+        self.hidden_gru = 32
+        self.hidden_gnn = 32
+        self.output_size = output_size
+        meo_len = len(meo_col)
+        st_len = len(st_col)
+        print(meo_len,st_len)
+        
+        self.unlabel_lstm_1 = nn.LSTM(meo_len, self.hidden_lstm) #v
+        self.unlabel_linear_1 = nn.Linear(st_len*9, self.hidden_linear)#v
+        self.unlabel_linear_2 = nn.Linear(self.hidden_linear+self.hidden_lstm, self.hidden_linear*2)
+        self.label_lstm_1 = nn.LSTM(meo_len+1, self.hidden_lstm)#v
+        self.label_linear_1 = nn.Linear(st_len*9+1, self.hidden_linear)#v
+        self.label_linear_2 = nn.Linear(self.hidden_linear+self.hidden_lstm+self.hidden_gnn, self.hidden_linear*2)
+        self.label_linear_3 = nn.Linear(self.hidden_gnn, self.hidden_linear*2)
 
+#         self.stfgn = MultiView_GNN(in_features=146, out_size=self.hidden_gnn, gat_hidden_size=self.hidden_gnn)
+        # self.stfgn = MultiView_GNN_batch(in_features=146, out_size=self.hidden_gnn, gat_hidden_size=self.hidden_gnn)
+        self.GATLayer = GraphAttentionLayer(len(st_col)*9+len(meo_col), self.hidden_gnn, 0.2, 0.2)
+        
+        self.idw_attention = Attention_layer(num_station, self.hidden_linear*2, self.hidden_linear*2, 16)
+        
+        self.GRU = nn.GRUCell(self.hidden_gru+self.hidden_linear*2+self.hidden_linear*2 , self.hidden_gru, bias=True) #nn.GRUCell(input_size, hidden_size)
+        self.liner_t = nn.Linear(self.hidden_gru, self.hidden_gru)
+        self.output_fc = nn.Linear(self.hidden_gru ,output_size )
+        
+    def forward(self, meo_unlabel, feature_unlabel, ovi_label, meo_label, feature_label, dis_label, h_t, timestamp, label_id_list) :#timestamp
+        
+#         batch_adj = []
+#         batch_feat = []
+        batch_graph_h = []
+        gid_idx_list = []
+        for i in range(len(timestamp)):
+            try:
+                t = timestamp[i].item()
+            except:
+                t = timestamp[i]
+#             print('timestamp',t)
+            gids = label_id_list[i]
+            adj, node_feat, node_id = read_fusion_graph_1view(t,graph_path)
+            # print('node_feat',node_feat.shape)#torch.Size([1608, 146])
+            gid_idx = nodelist2indexlist(gids.tolist(),node_id)
+            gid_idx_list.append(gid_idx)
+            node_num = int(node_feat.shape[0]/3)
+            # hidden_GAT = []
+            # for adj in multi_view_adj:
+            #     h = self.GATLayer(node_feat, adj)
+            #     hidden_GAT.append(h.cpu().detach().numpy())
+            hidden_GAT = self.GATLayer(node_feat, adj)#torch.Size([1608, 32])
+            batch_graph_h.append(hidden_GAT.cpu().detach().numpy()[node_num:node_num*2])
+        # print('hidden_GAT',hidden_GAT.shape,'batch_graph_h',len(batch_graph_h)) #torch.Size([1608, 32]) 48
+        batch_graph_h = torch.tensor(batch_graph_h, device=DEVICE)#.to(device) #torch.Size([48, 1608, 32])
+        # print('batch_graph_h',batch_graph_h.shape) #torch.Size([128, 1608, 32])
+        if torch.isnan(batch_graph_h).any():
+            batch_graph_h = torch.nan_to_num(batch_graph_h)
+
+        # label_data_stfgn_batch, _ = self.stfgn(batch_graph_h) 
+        label_data_stfgn_batch = batch_graph_h #torch.Size([48, 1608, 32])
+        label_data_stfgn_batch = get_certain_node_batch(label_data_stfgn_batch,gid_idx_list) # torch.Size([48, 10, 32])
+        # print('label_data_stfgn_batch',label_data_stfgn_batch.shape)
+        label_data_stfgn_batch = label_data_stfgn_batch.permute(1,0,2) #[10,48,32]
+        # print('label_data_stfgn_batch',label_data_stfgn_batch.shape) # torch.Size([10, 48, 32])
+
+        for j in range(self.prev_slot):
+            temp_approximate = F.relu(self.liner_t(h_t)) 
+#             print('temp_approximate',temp_approximate.shape) #torch.Size([128, 32])
+
+            unlabel_time_data = meo_unlabel.permute(1,0,2) # torch.Size([128, 4, 11]) ->  torch.Size([4, 128, 11])
+            unlabel_time_data, _ = self.unlabel_lstm_1(unlabel_time_data) # torch.Size([4, 128, 11]) ->  torch.Size([4, 128, 32])
+            unlabel_time_data = unlabel_time_data.float()[-1] # torch.Size([4, 128, 32]) ->  torch.Size([128, 32])
+#             print('unlabel_time_data',unlabel_time_data.shape) #torch.Size([32, 32])
+        
+            unlabel_fea_data = nn.ReLU()(self.unlabel_linear_1(feature_unlabel)) # torch.Size([128, 135]) -> torch.Size([128, 32])
+            unlabel_data = torch.cat((unlabel_time_data, unlabel_fea_data), 1) # torch.Size([128, 32])+torch.Size([128, 32]) -> torch.Size([128, 64])
+            unlabel_data = nn.ReLU()(self.unlabel_linear_2(unlabel_data)) # torch.Size([128, 64]) -> torch.Size([128, 64])
+#             print('unlabel_data',unlabel_data.shape) #torch.Size([32, 64])
+
+            label_time = torch.cat((ovi_label.unsqueeze(3), meo_label), 3) #torch.Size([128, 10, 4, 1]) + torch.Size([128, 10, 4, 11]) -> torch.Size([128, 10, 4, 12])
+            label_time_data = []
+            label_feature = []
+            label_data = []
+            for i in range(self.num_station) :
+                lstm_tmp, _ = self.label_lstm_1(label_time[:,i,:,:].permute(1,0,2)) #torch.Size([128, 4, 12]) -> torch.Size([4, 128, 12]) -> torch.Size([4, 128, 32])
+                lstm_tmp = lstm_tmp.float()[-1] #torch.Size([4, 128, 32]) -> torch.Size([128, 32])
+                label_time_data.append(lstm_tmp)
+                label_feature.append(nn.ReLU()(self.label_linear_1(feature_label[:,i,:])))
+                label_data.append(nn.ReLU()(self.label_linear_2(torch.cat([label_time_data[i], label_feature[i],label_data_stfgn_batch[i]], 1))))
+
+#             print('lstm_tmp',lstm_tmp.shape)
+#             print('label_feature[0]',label_feature[0].shape)
+#             print('label_data',label_data.shape)
+
+
+            attention_score = self.idw_attention(unlabel_data, label_data, dis_label)
+            # attention_score = self.idw_attention(unlabel_data, label_data, dis_label)
+            attention_out = []
+            for n,i in enumerate(label_data) :
+                attention_out.append(attention_score[:,n].unsqueeze(1)*i)
+            attention_out = torch.sum(torch.stack(attention_out).permute(1,0,2), 1) #torch.Size([128, 64])
+        
+            sp_approximate = F.relu(attention_out) #torch.Size([128, 64])
+#             print('sp_approximate',sp_approximate.shape) #torch.Size([128, 64])
+            
+            # torch.Size([128, 64]), torch.Size([128, 32]), torch.Size([128, 64])
+            X_feat = torch.cat( [unlabel_data,temp_approximate,sp_approximate], dim=1 ) #torch.Size([128, 160])
+#             print('X_feat',X_feat.shape) #torch.Size([128, 160])
+            h_t = self.GRU(X_feat)
+#             print('h_t',h_t.shape) #torch.Size([128, 32])
+        out = nn.ReLU()(self.output_fc(h_t))
+#         print('out',out.shape) #torch.Size([128, 1])
+        return out

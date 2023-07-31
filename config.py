@@ -5,19 +5,22 @@ DATASET = 'dengue'
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # print(DEVICE)
 wandb_pjname = 'dengue-diff-mask'
-# wandb_pjname = 'aqi-test-predict-org'
+# wandb_pjname = 'aqi-test-predict'
+# graph_type='sp_dist'
+# graph_type='sp_clus'
+# graph_type='temp'
 
-mask_folder_name = 'mask07'
+mask_folder_name = 'mask05'
 # mask_folder_name = ''
 
 fuse_adj_method = 'add' 
-alpha_multiview_fusion = 0.8
+alpha_multiview_fusion = 0.5
 graph_path = 'dataset_processed/'+DATASET+'/'+mask_folder_name+'/graph_data/v2/'
 add_labeled_embed = False
 
 k_neighbor = 10
-random_seed = 99
-batch_size = 8#1024
+random_seed = 17
+batch_size = 256#1024
 shuffle=True
 model_name = 'org' 
 #MODELS = {"org":MVGFRNN ,"no_f": MVGFRNN_no_fusion, "no_g": MVGFRNN_no_graph, "no_idw": MVGFRNN_no_idw, "no_res": MVGFRNN_no_residual}
@@ -29,7 +32,7 @@ if DATASET == 'dengue':
     PREV_SLOT = 4
     model_output_size=1
 
-lr=0.0001#0.002#0.0003
+lr=0.001#0.002#0.0003
 max_epoch = 20
 patient = 3
 

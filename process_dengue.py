@@ -18,8 +18,8 @@ aq_data
 all_labeled_id = list(aq_data.id.unique())
 all_labeled_id
 # %%
-labeled_rate = 0.7
-mask_folder = 'mask07'
+labeled_rate = 0.5
+mask_folder = mask_folder_name
 if not os.path.exists('dataset_processed/'+DATASET+'/'+mask_folder):
     os.makedirs('dataset_processed/'+DATASET+'/'+mask_folder)
 # %%
@@ -56,6 +56,17 @@ for item in test_id:
 	file.write(str(item)+"\n")
 file.close()
 
+# %%
+
+for i in range(10):
+	remain_id = unlabeled_id.copy()
+	select_id = random.sample(remain_id,k=round(len(unlabeled_id)*0.1))
+	remain_id = list(set(remain_id)-set(select_id))
+	file = open('dataset_processed/'+DATASET+'/'+mask_folder+'/unlabeled_split_'+str(i)+'.txt','w')
+	for item in select_id:
+		file.write(str(item)+"\n")
+	file.close()
+# %%
 # with open('dataset_processed/'+DATASET+'/'+mask_folder+'/label_id.txt','r') as f:
 #     lines = f.read().split('\n')[:-1]
 # labeled_id = [int(x) for x in lines]
@@ -68,18 +79,7 @@ file.close()
 # with open('dataset_processed/'+DATASET+'/'+mask_folder+'/test_id.txt','r') as f:
 #     lines = f.read().split('\n')[:-1]
 # test_id = [int(x) for x in lines]
-unlabeled_id = train_id+valid_id+test_id
-# %%
-
-for i in range(10):
-	remain_id = unlabeled_id.copy()
-	select_id = random.sample(remain_id,k=round(len(unlabeled_id)*0.1))
-	remain_id = list(set(remain_id)-set(select_id))
-	file = open('dataset_processed/'+DATASET+'/'+mask_folder+'/unlabeled_split_'+str(i)+'.txt','w')
-	for item in select_id:
-		file.write(str(item)+"\n")
-	file.close()
-# %%
+# unlabeled_id = train_id+valid_id+test_id
 
 grids
 

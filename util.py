@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 from sklearn.metrics import mean_squared_error,mean_absolute_error
+from torchmetrics import MeanAbsolutePercentageError
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -45,6 +46,7 @@ if DATASET=='aqi':
                 'Vehicle Service','Sport','Daily Life','Institution','primary','secondary','pedestrian','highway','water','industrial','green','residential']
 
 st_col_all = st_col.copy()
+# if DATASET =='dengue':
 dirs = ['B', 'T', 'L', 'R', 'RB', 'RT', 'LB', 'LT']
 for grid_dir in dirs:
     col_name = pd.Series(st_col.copy()) + '_'+grid_dir
@@ -53,9 +55,12 @@ for grid_dir in dirs:
 # %%
 
 def get_splited_data(cv_k):
-
-    with open('dataset_processed/'+DATASET+'/'+mask_folder_name+'/label_id.txt','r') as f:
-        lines = f.read().split('\n')[:-1]
+    try:
+        with open('dataset_processed/'+DATASET+'/'+mask_folder_name+'/label_id.txt','r') as f:
+            lines = f.read().split('\n')[:-1]
+    except:
+        with open('dataset_processed/'+DATASET+'/'+mask_folder_name+'label_id.txt','r') as f:
+            lines = f.read().split('\n')[:-1]
     labeled_id = [int(x) for x in lines]
     
     k_fold = 10 if DATASET=='dengue' else 5
@@ -63,8 +68,12 @@ def get_splited_data(cv_k):
 
     split_id_list = []
     for i in range(k_fold):
-        with open('dataset_processed/'+DATASET+'/'+mask_folder_name+'/unlabeled_split_'+str(i)+'.txt','r') as f:
-            lines = f.read().split('\n')[:-1]
+        try:
+            with open('dataset_processed/'+DATASET+'/'+mask_folder_name+'/unlabeled_split_'+str(i)+'.txt','r') as f:
+                lines = f.read().split('\n')[:-1]
+        except:
+            with open('dataset_processed/'+DATASET+'/'+mask_folder_name+'unlabeled_split_'+str(i)+'.txt','r') as f:
+                lines = f.read().split('\n')[:-1]
         gid = [int(x) for x in lines]
         # print(i,gid)
         split_id_list.append(gid)
@@ -94,7 +103,10 @@ class station_data_dengue(Dataset) :
 #         self.target_unlabel = np.array(valid_index)[:,0].tolist()
 #         self.target_label = np.array(valid_index)[:,1:].tolist()
         self.all_data = pd.read_csv('dataset_processed/'+DATASET+'/all_processed_data_9box_nexty.csv')
-        self.grid_df_neighbor = pd.read_csv('dataset_processed/'+DATASET+'/'+mask_folder_name+'/unlabel_grid_100neighbor_dist.csv')
+        try:
+            self.grid_df_neighbor = pd.read_csv('dataset_processed/'+DATASET+'/'+mask_folder_name+'/unlabel_grid_100neighbor_dist.csv')
+        except:
+            self.grid_df_neighbor = pd.read_csv('dataset_processed/'+DATASET+'/'+mask_folder_name+'unlabel_grid_100neighbor_dist.csv')
         self.all_static_features = self.all_data[['id']+st_col_all].drop_duplicates().reset_index()
         labeled_id, train_id, valid_id, test_id = get_splited_data(cv_k)
         
@@ -218,10 +230,10 @@ class station_data_AQI(Dataset) :
         self.unlabel_data = self.all_data[self.all_data['id'].isin(self.unlabel_id)].reset_index()
         # print(self.unlabel_data.shape)
 
-        self.label_ovi_target = self.label_data['original_pm25_target'].values
-        self.unlabel_ovi_target = self.unlabel_data['original_pm25_target'].values
-        # self.label_ovi_target = self.label_data['PM2.5_target'].values
-        # self.unlabel_ovi_target = self.unlabel_data['PM2.5_target'].values
+        # self.label_ovi_target = self.label_data['original_pm25_target'].values
+        # self.unlabel_ovi_target = self.unlabel_data['original_pm25_target'].values
+        self.label_ovi_target = self.label_data['PM2.5_target'].values
+        self.unlabel_ovi_target = self.unlabel_data['PM2.5_target'].values
         self.label_meo = self.label_data[['time','id']+meo_col]
         self.label_feature = self.all_static_features[self.all_static_features['id'].isin(self.label_id)].reset_index()
         self.unlabel_meo = self.unlabel_data[['time','id']+meo_col]
@@ -239,6 +251,7 @@ class station_data_AQI(Dataset) :
         self.prev_slot = PREV_SLOT
         self.pred_slot = model_output_size #pred_slot
         print('self.prev_slot, self.pred_slot = ',self.prev_slot,self.pred_slot)
+        print('target min max', min(self.label_ovi_target), max(self.label_ovi_target) )
         
     def __getitem__(self, index) :
         unlabel_id = self.unlabel_data.id[index]
@@ -400,7 +413,7 @@ class HuberLoss(nn.Module):
 loss_func_rmse = RMSELoss()
 loss_func_mae = MAELoss()
 loss_func_huber = HuberLoss()
-
+loss_func_mape = MeanAbsolutePercentageError().to(DEVICE)
 def avg_loss(loss_func, y_pred, y_true) :
     loss_1 = loss_func(y_pred, y_true)
     loss_2 = loss_func(y_pred[:,0:3], y_true[:,0:3])
@@ -416,6 +429,7 @@ def testing(net, data_loader) :
     if DATASET=='dengue':
         loss_sum_rmse = 0.0
         loss_sum_mae = 0.0
+        loss_sum_mape = 0.0
         loss_sum_huber = 0.0
         with torch.no_grad() :
             for ovi_target, meo_unlabel, feature_unlabel, ovi_label, meo_label, feature_label_out, inv_dis_label,label_id_list, timestamp in tqdm(data_loader):
@@ -435,16 +449,19 @@ def testing(net, data_loader) :
                 # print('ovi_target',ovi_target)
                 rmse = loss_func_rmse(output, ovi_target)
                 mae = loss_func_mae(output, ovi_target)
+                mape = loss_func_mape(output, ovi_target)
                 loss = (rmse+mae)/2
                 loss_sum_huber += loss#.item()
                 loss_sum_rmse += rmse#.item()
                 loss_sum_mae += mae#.item()
+                loss_sum_mape += mape#.item()
             print('output',output)
             print('ovi_target',ovi_target)
             avg_huber = loss_sum_huber/len_data
             avg_rmse = loss_sum_rmse/len_data
             avg_mae = loss_sum_mae/len_data
-        return avg_huber, avg_rmse,avg_mae
+            avg_mape = loss_sum_mape/len_data
+        return avg_huber, avg_rmse,avg_mae,avg_mape
     
     else:
         loss_sum_rmse = 0.0
@@ -452,8 +469,14 @@ def testing(net, data_loader) :
         loss_sum_huber = 0.0
         avg_rmse = np.zeros((5))
         avg_mae = np.zeros((5))
+        avg_mape = np.zeros((5))
         with torch.no_grad() :
+            nan_count=0
             for ovi_target, meo_unlabel, feature_unlabel, ovi_label, meo_label, feature_label_out, inv_dis_label,label_id_list, timestamp in tqdm(data_loader):
+                if torch.isnan(ovi_target).any():
+                    print('have nan')
+                    print(ovi_target)
+                    nan_count+=1
                 ovi_target = torch.nan_to_num(ovi_target)
                 meo_unlabel = torch.nan_to_num(meo_unlabel)
                 feature_unlabel = torch.nan_to_num(feature_unlabel)
@@ -472,21 +495,25 @@ def testing(net, data_loader) :
                 # mae = loss_func_mae(output, ovi_target)
                 loss_part_rmse = avg_loss(loss_func_rmse,output, ovi_target)
                 loss_part_mae = avg_loss(loss_func_mae,output, ovi_target)
+                loss_part_mape = avg_loss(loss_func_mape,output, ovi_target)
                 for n, k in enumerate(loss_part_rmse) :
                     avg_rmse[n] += k
                 for n, k in enumerate(loss_part_mae) :
                     avg_mae[n] += k
+                for n, k in enumerate(loss_part_mape) :
+                    avg_mape[n] += k
                 loss = (loss_part_rmse[0]+loss_part_mae[0])/2
                 loss_sum_huber += loss#.item()
                 # loss_sum_rmse += loss_part_rmse[0]#.item()
                 # loss_sum_mae += loss_part_mae[0]#.item()
             print('output min, max', torch.min(output), torch.max(output))
             print('target min, max', torch.min(ovi_target), torch.max(ovi_target))
+            print('nan count', nan_count)
             # print('output',output)
             # print('ovi_target',ovi_target)
             # avg_huber = loss_sum_huber/len_data
             # avg_rmse = loss_sum_rmse/len_data
             # avg_mae = loss_sum_mae/len_data
-        return loss_sum_huber/len_data, avg_rmse/len_data,avg_mae/len_data
+        return loss_sum_huber/len_data, avg_rmse/len_data,avg_mae/len_data,avg_mape/len_data
 
 

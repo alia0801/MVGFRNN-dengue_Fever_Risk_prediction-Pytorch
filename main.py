@@ -37,7 +37,7 @@ cv_k=args.cv_k
 model_name=args.model_name
 lr = args.lr
 
-MODELS = {"org":MVGFRNN ,"no_f": MVGFRNN_no_fusion, "no_g": MVGFRNN_no_graph, "no_idw": MVGFRNN_no_idw, "no_res": MVGFRNN_no_residual, 'ztyao': ZTYao}
+MODELS = {"org":MVGFRNN ,"no_f": MVGFRNN_no_fusion, "no_g": MVGFRNN_no_graph, "no_idw": MVGFRNN_no_idw, "no_res": MVGFRNN_no_residual, 'ztyao': ZTYao, '1view': OneView}
 
 wandb.init(
     # set the wandb project where this run will be logged
@@ -60,30 +60,34 @@ wandb.init(
     }
 )
 
-def print_evaluation_results(huber, rmse, mae):
+def print_evaluation_results(huber, rmse, mae, mape):
     if DATASET=='dengue':
-        print("Loss : %.4f RMSE : %.4f MAE : %.4f" %( huber, rmse, mae))
+        print("Loss : %.4f RMSE : %.4f MAE : %.4f MAPE: %.4f" %( huber, rmse, mae, mape))
     if DATASET=='aqi':
         print('Loss :',huber)
         print('RMSE :',rmse)
         print('MAE :',mae)
+        print('MAPE :',mape)
 
-def log_evaluation_results(huber, rmse, mae,stat='Training'):
+def log_evaluation_results(huber, rmse, mae, mape ,stat='Training'):
     if DATASET=='dengue':
-        logging.info("%s... Loss : %.4f  RMSE : %.4f  MAE : %.4f" %(stat, huber, rmse, mae))
+        logging.info("%s... Loss : %.4f  RMSE : %.4f  MAE : %.4f MAPE : %.4f" %(stat, huber, rmse, mae, mape))
     if DATASET=='aqi':
         logging.info(stat)
         # loss_str = ''
         rmse_str = ''
         mae_str = ''
+        mape_str = ''
         for i in range(len(rmse)):
             # loss_str += (str(round(huber[i],5))+'\t')
             rmse_str += (str(round(rmse[i],5))+'\t')
             mae_str += (str(round(mae[i],5))+'\t')
+            mape_str += (str(round(mape[i],5))+'\t')
 
         logging.info("Loss"+str(huber))
         logging.info('RMSE'+rmse_str)
         logging.info('MAE'+mae_str)
+        logging.info('MAPE'+mape_str)
 
 if __name__ == '__main__':
 
@@ -107,6 +111,8 @@ if __name__ == '__main__':
     logging.info("VIEW_NUM = %3d" %( VIEW_NUM))
     if VIEW_NUM==4:
         logging.info("fuse_adj_method = "+fuse_adj_method)
+    if VIEW_NUM==1:
+        logging.info("graph_type = "+graph_type)
     logging.info("k_neighbor = %3d" %( k_neighbor))
     logging.info("batch_size = %4d"%(batch_size))
     logging.info("historical_T = %2d"%(PREV_SLOT))
@@ -152,11 +158,11 @@ if __name__ == '__main__':
 
     print("validation set performance before training...")
     time.sleep(1)
-    test_huber_before, test_rmse_before, test_mae_before = testing(net, valid_loader)
+    test_huber_before, test_rmse_before, test_mae_before,test_mape_before = testing(net, valid_loader)
     # print("Huber : %.4f RMSE : %.4f MAE : %.4f" %( test_huber_before, test_rmse_before, test_mae_before))#RMSE : 40.9928 MAE : 19.3708
     # logging.info("Before training... Huber : %.4f  RMSE : %.4f  MAE : %.4f" %( test_huber_before, test_rmse_before, test_mae_before))
-    print_evaluation_results(test_huber_before, test_rmse_before, test_mae_before)
-    log_evaluation_results(test_huber_before, test_rmse_before, test_mae_before,'before training')
+    print_evaluation_results(test_huber_before, test_rmse_before, test_mae_before, test_mape_before)
+    log_evaluation_results(test_huber_before, test_rmse_before, test_mae_before , test_mape_before,'before training')
     torch.cuda.empty_cache()
 
     patient_count=0
@@ -173,6 +179,7 @@ if __name__ == '__main__':
             net.train()
             running_loss_rmse = 0.0
             running_loss_mae = 0.0
+            running_loss_mape = 0.0
             running_loss_huber = 0.0
             for ovi_target, meo_unlabel, feature_unlabel, ovi_label, meo_label, feature_label_out, inv_dis_label,label_id_list, timestamp in tqdm(train_loader):
                 optimizer.zero_grad()
@@ -195,6 +202,7 @@ if __name__ == '__main__':
                 # loss = loss_func_huber(output, ovi_target)
                 rmse = loss_func_rmse(output, ovi_target)
                 mae = loss_func_mae(output, ovi_target)
+                mape = loss_func_mape(output, ovi_target)
                 if model_name=='ztyao':
                     loss = rmse*0.5+mae*0.5
                 else:
@@ -204,29 +212,31 @@ if __name__ == '__main__':
                 running_loss_huber += loss#.item()
                 running_loss_rmse += rmse#.item()
                 running_loss_mae += mae#.item()
+                running_loss_mape += mape#.item()
                 # print('output',output)
                 # print('rmse, mae, avg', rmse, mae, loss)
-            print('output',output)
-            print('ovi_target',ovi_target)
+            # print('output',output)
+            # print('ovi_target',ovi_target)
             avg_huber = running_loss_huber/len(train_loader)
             avg_rmse = running_loss_rmse/len(train_loader)
             avg_mae = running_loss_mae/len(train_loader)
+            avg_mape = running_loss_mape/len(train_loader)
             torch.save(net.state_dict(), './model/'+log_file_timestr+'/tmp_save_model.pt')
-            print("[Epoch %2d] Training Huber : %.4f Training RMSE : %.4f Training MAE : %.4f" %( epoch, avg_huber, avg_rmse, avg_mae))
+            print("[Epoch %2d] Training Huber : %.4f Training RMSE : %.4f Training MAE : %.4f Training MAPE : %.4f" %( epoch, avg_huber, avg_rmse, avg_mae, avg_mape))
             # print("[Epoch %2d]"%epoch)
             # print_evaluation_results(avg_huber, avg_rmse, avg_mae)
-            logging.info("[Epoch %2d] Training Huber : %.4f Training RMSE : %.4f Training MAE : %.4f" %( epoch, avg_huber, avg_rmse, avg_mae))
-            wandb.log({"Training Huber": avg_huber,"Training RMSE": avg_rmse, "Training MAE": avg_mae})
+            logging.info("[Epoch %2d] Training Huber : %.4f Training RMSE : %.4f Training MAE : %.4f Training MAPE : %.4f" %( epoch, avg_huber, avg_rmse, avg_mae, avg_mape))
+            wandb.log({"Training Huber": avg_huber,"Training RMSE": avg_rmse, "Training MAE": avg_mae, "Training MAPE": avg_mape})
 
             print("Start to validation...")
             time.sleep(1)
-            valid_huber, valid_rmse, valid_mae = testing(net, valid_loader)
+            valid_huber, valid_rmse, valid_mae,valid_mape = testing(net, valid_loader)
             # print("[Epoch %2d] Validation Huber : %.4f Validation RMSE : %.4f Validation MAE : %.4f" %(epoch, valid_huber, valid_rmse, valid_mae))
             print("[Epoch %2d]"%epoch)
-            print_evaluation_results(valid_huber, valid_rmse, valid_mae)
+            print_evaluation_results(valid_huber, valid_rmse, valid_mae, valid_mape)
             logging.info("[Epoch %2d]"%epoch)
-            log_evaluation_results(valid_huber, valid_rmse, valid_mae,'Validation')
-            wandb.log({"Validation Huber": valid_huber, "Validation RMSE": valid_rmse, "Validation MAE": valid_mae})
+            log_evaluation_results(valid_huber, valid_rmse, valid_mae, valid_mape,'Validation')
+            wandb.log({"Validation Huber": valid_huber, "Validation RMSE": valid_rmse, "Validation MAE": valid_mae,  "Validation MAPE": valid_mape})
 
             if valid_huber<best_valid_loss:
                 best_valid_loss = valid_huber
@@ -239,18 +249,27 @@ if __name__ == '__main__':
             else:
                 patient_count+=1
                 if patient_count == patient:
+                    if best_epoch==-1:
+                        print("Start to testing...")
+                        time.sleep(1)
+                        test_huber, test_rmse, test_mae, test_mape = testing(net, test_loader)
+                        print("[Epoch %2d]"%epoch)
+                        print_evaluation_results(test_huber, test_rmse, test_mae, test_mape)
+                        logging.info("[Epoch %2d]"%epoch)
+                        log_evaluation_results(test_huber, test_rmse, test_mae , test_mape,'Testing')
+                        wandb.log({"Testing Huber": test_huber, "Testing RMSE": test_rmse, "Testing MAE": test_mae, "Testing MAPE": test_mape})
                     break
             time.sleep(1)
 
             print("Start to testing...")
             time.sleep(1)
-            test_huber, test_rmse, test_mae = testing(net, test_loader)
+            test_huber, test_rmse, test_mae, test_mape = testing(net, test_loader)
             # print("[Epoch %2d] Testing Huber : %.4f Testing RMSE : %.4f Testing MAE : %.4f" %(epoch, test_huber, test_rmse, test_mae))
             print("[Epoch %2d]"%epoch)
-            print_evaluation_results(test_huber, test_rmse, test_mae)
+            print_evaluation_results(test_huber, test_rmse, test_mae, test_mape)
             logging.info("[Epoch %2d]"%epoch)
-            log_evaluation_results(test_huber, test_rmse, test_mae,'Testing')
-            wandb.log({"Testing Huber": test_huber, "Testing RMSE": test_rmse, "Testing MAE": test_mae})
+            log_evaluation_results(test_huber, test_rmse, test_mae, test_mape ,'Testing')
+            wandb.log({"Testing Huber": test_huber, "Testing RMSE": test_rmse, "Testing MAE": test_mae, "Testing MAPE": test_mape})
             time.sleep(1)
             
         except Exception as e:

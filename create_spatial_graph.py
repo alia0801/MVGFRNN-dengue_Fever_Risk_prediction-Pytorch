@@ -10,7 +10,7 @@ import math
 from tqdm import tqdm
 from util import *
 from config import *
-mask_folder_name = 'mask07'
+mask_folder_name = 'mask05'
 print(mask_folder_name)
 if not os.path.exists('dataset_processed/'+DATASET+'/'+mask_folder_name+'/graph_data/v2'):
     os.makedirs('dataset_processed/'+DATASET+'/'+mask_folder_name+'/graph_data/v2')
